@@ -38,7 +38,7 @@ import fiji.plugin.trackmate.TrackMate;
 import fiji.plugin.trackmate.detection.DetectionUtils;
 import fiji.plugin.trackmate.detection.LabelImageDetectorFactory;
 import fiji.plugin.trackmate.detection.SpotGlobalDetector;
-import fiji.plugin.trackmate.omnipose.advanced.AdvancedOmniposeSettings;
+import fiji.plugin.trackmate.omnipose.OmniposeSettings;
 import fiji.plugin.trackmate.util.TMUtils;
 import ij.IJ;
 import ij.ImagePlus;
@@ -47,6 +47,9 @@ import ij.plugin.Concatenator;
 import ij.plugin.Duplicator;
 import ij.process.ImageConverter;
 import ij.process.StackConverter;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.util.stream.Collectors;
 import net.imagej.ImgPlus;
 import net.imagej.axis.Axes;
 import net.imglib2.Interval;
@@ -202,7 +205,7 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 		{
 			results = executors.invokeAll( processes );
 			for ( final Future< String > future : results )
-				resultDirs.add( future.get() );
+				resultDirs.add( future.get() );                       
 		}
 		catch ( final InterruptedException | ExecutionException e )
 		{
@@ -558,8 +561,8 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 			for ( final ImagePlus imp : imps )
 			{
 				final String name = imp.getShortTitle() + ".tif";
-                                // If we are running an advanced omnipose detector, just save the segmentation channel as tmp image
-                                if (cellposeSettings instanceof AdvancedOmniposeSettings) {
+                                // If we are running an omnipose detector, just save the segmentation channel as tmp image
+                                if (cellposeSettings instanceof OmniposeSettings) {
                                     ImagePlus chanImp = new Duplicator().run(imp, cellposeSettings.chan, cellposeSettings.chan, 0, 0, 0, 0);
                                     IJ.saveAsTiff( chanImp, Paths.get( tmpDir.toString(), name ).toString() );
                                 } else {
@@ -572,19 +575,75 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 			 */
 
 			try
-			{
-				final List< String > cmd = cellposeSettings.toCmdLine( tmpDir.toString(), is3D, anisotropy );
-				logger.setStatus( "Running " + cellposeSettings.getExecutableName() );
-				logger.log( "Running " + cellposeSettings.getExecutableName() + " with args:\n" );
-				logger.log( String.join( " ", cmd ) );
-				logger.log( "\n" );
-				final ProcessBuilder pb = new ProcessBuilder( cmd );
-				pb.redirectOutput( ProcessBuilder.Redirect.INHERIT );
-				pb.redirectError( ProcessBuilder.Redirect.INHERIT );
+                        {
+                            if (cellposeSettings instanceof OmniposeSettings) 
+                            {   
+                                final List< String > cmdOmni = new ArrayList<>( cellposeSettings.toCmdLine( tmpDir.toString(), is3D, anisotropy ) );
+                                
+                                int nClasses = 2; // 2 by default in custom models
+                                cmdOmni.add( "--nclasses" );
+                                cmdOmni.add( String.valueOf( nClasses ) );
+                                
+                                logger.setStatus( "Running " + cellposeSettings.getExecutableName() );
+                                logger.log( "Running " + cellposeSettings.getExecutableName() + " with args:\n" );
+                                logger.log( String.join( " ", cmdOmni ) );
+                                logger.log( "\n" );
+                                
+                                final ProcessBuilder pbOmni = new ProcessBuilder( cmdOmni );
+//                              pbOmni.redirectOutput( ProcessBuilder.Redirect.INHERIT );
+//                              pbOmni.redirectError( ProcessBuilder.Redirect.INHERIT );
+                                pbOmni.redirectErrorStream(true);
+                                process = pbOmni.start();
+                                
+                                BufferedReader reader = new BufferedReader( new InputStreamReader(process.getInputStream()));
+//                                reader.lines().forEach(line -> System.out.println(line));
+                                String pythonErrorOutput = reader.lines().collect(Collectors.joining());
+                                if (pythonErrorOutput.contains( "size mismatch for output.2.bias:" ) ) 
+                                {
+                                    if( pythonErrorOutput.contains( "copying a param with shape torch.Size([4]) from checkpoint" ) ) 
+                                    {   
+                                        nClasses = 3;
+                                        logger.log( "Regarding the model loaded, --nclasses argument should be set to " + String.valueOf( nClasses ) + "\n" );
+                                    } 
+                                    else
+                                    {   
+                                        nClasses = 4;
+                                        logger.log( "Regarding the model loaded, --nclasses argument should be set to " + String.valueOf( nClasses ) + "\n" );
+                                    }
 
-				process = pb.start();
-				process.waitFor();
-			}
+                                    cmdOmni.remove(cmdOmni.size() - 1);
+                                    cmdOmni.add(String.valueOf( nClasses ));
+
+                                    logger.log( "Running " + cellposeSettings.getExecutableName() + " with args:\n" );
+                                    logger.log( String.join( " ", cmdOmni ) );
+                                    logger.log( "\n" );
+                                    final ProcessBuilder updatedPbOmni = new ProcessBuilder( cmdOmni );
+                                    updatedPbOmni.redirectOutput( ProcessBuilder.Redirect.INHERIT );
+                                    updatedPbOmni.redirectError( ProcessBuilder.Redirect.INHERIT );
+
+                                    process = updatedPbOmni.start();
+                                    process.waitFor();
+                                } 
+                                else if (pythonErrorOutput.contains("pretrained model has incorrect path") ) 
+                                {
+                                    logger.log( "Pretrained model has incorrect path \n" );
+                                }
+                            } 
+                            else 
+                            {
+                                final List< String > cmd = cellposeSettings.toCmdLine( tmpDir.toString(), is3D, anisotropy );
+                                logger.setStatus( "Running " + cellposeSettings.getExecutableName() );
+                                logger.log( "Running " + cellposeSettings.getExecutableName() + " with args:\n" );
+                                logger.log( String.join( " ", cmd ) );
+                                logger.log( "\n" );
+                                final ProcessBuilder pb = new ProcessBuilder( cmd );
+                                pb.redirectOutput( ProcessBuilder.Redirect.INHERIT );
+                                pb.redirectError( ProcessBuilder.Redirect.INHERIT );
+
+                                process = pb.start();
+                                process.waitFor();
+                            }
+                        }
 			catch ( final IOException e )
 			{
 				final String msg = e.getMessage();
@@ -593,7 +652,7 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 					errorMessage = baseErrorMessage + "Problem running " + cellposeSettings.getExecutableName() + ":\n"
 							+ "The executable does not have the file permission to run.\n"
 							+ "Please see https://github.com/MouseLand/cellpose#run-cellpose-without-local-python-installation for more information.\n";
-				}
+				}                               
 				else
 				{
 					errorMessage = baseErrorMessage + "Problem running " + cellposeSettings.getExecutableName() + ":\n" + e.getMessage();

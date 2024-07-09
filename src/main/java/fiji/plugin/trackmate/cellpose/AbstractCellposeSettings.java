@@ -114,8 +114,6 @@ public abstract class AbstractCellposeSettings
 		 * Cellpose command line arguments.
 		 */
 
-		cmd.add( "--verbose" );
-
 		// Target dir.
 		cmd.add( "--dir" );
 		cmd.add( imagesDir );
