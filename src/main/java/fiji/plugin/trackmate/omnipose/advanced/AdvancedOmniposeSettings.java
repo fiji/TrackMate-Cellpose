@@ -41,6 +41,7 @@ public class AdvancedOmniposeSettings extends OmniposeSettings
 		 */
 		cmd.add( "--mask_threshold" );
 		cmd.add( String.valueOf( cellProbThreshold ) );
+
 		return Collections.unmodifiableList( cmd );
 	}
 

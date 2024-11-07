@@ -4,14 +4,17 @@ import static fiji.plugin.trackmate.detection.DetectorKeys.DEFAULT_TARGET_CHANNE
 import static fiji.plugin.trackmate.detection.DetectorKeys.KEY_TARGET_CHANNEL;
 import static fiji.plugin.trackmate.detection.ThresholdDetectorFactory.KEY_SIMPLIFY_CONTOURS;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -25,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.apache.commons.io.input.Tailer;
 import org.apache.commons.io.input.TailerListenerAdapter;
@@ -37,11 +41,13 @@ import fiji.plugin.trackmate.SpotCollection;
 import fiji.plugin.trackmate.TrackMate;
 import fiji.plugin.trackmate.detection.LabelImageDetectorFactory;
 import fiji.plugin.trackmate.detection.SpotGlobalDetector;
+import fiji.plugin.trackmate.omnipose.OmniposeSettings;
 import fiji.plugin.trackmate.util.TMUtils;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.gui.NewImage;
 import ij.plugin.Concatenator;
+import ij.plugin.Duplicator;
 import ij.process.ImageConverter;
 import ij.process.StackConverter;
 import net.imagej.ImgPlus;
@@ -101,7 +107,6 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 		this.baseErrorMessage = "[" + cellposeSettings.getExecutableName() + "Detector] ";
 	}
 
-
 	@Override
 	public boolean process()
 	{
@@ -119,6 +124,26 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 		final double frameInterval = ( timeIndex < 0 ) ? 1. : img.averageScale( timeIndex );
 
 		/*
+		 * Do we have Z?
+		 */
+//		final boolean is3d = !DetectionUtils.is2D( img );
+//		final double anisotropy;
+//		if ( is3d )
+//		{
+//			final int xIndex = img.dimensionIndex( Axes.X );
+//			final int zIndex = img.dimensionIndex( Axes.Z );
+//			anisotropy = img.averageScale( zIndex ) / img.averageScale( xIndex );
+//		}
+//		else
+//		{
+//			anisotropy = 1.;
+//		}
+
+		// get images nb frames and nb channels before to do the cropping
+		final int nslices = ( int ) img.dimension( img.dimensionIndex( Axes.Z ) );
+//                final int nchannels = (int) img.dimension( img.dimensionIndex( Axes.CHANNEL ) );
+
+		/*
 		 * Dispatch time-points to several tasks.
 		 */
 
@@ -130,13 +155,13 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 		 * the CPU and if we are on Mac. I tested multiprocessing on CPU under
 		 * windows, and there is no benefit for Windows. But there is a strong
 		 * speedup on Mac.
-		 * 
+		 *
 		 * On a PC with Windows, forcing Cellpose to run with the CPU: There is
 		 * no benefit from splitting the load between 1,2, 10 or 20 processes.
 		 * It seems like 1 Cellpose process can already use ALL the cores by
 		 * itself and running several Cellpose processes concurrently does not
 		 * lead to shorter processing time.
-		 * 
+		 *
 		 * For a source image 1024x502 over 92 time-points, 3 channels: - 1
 		 * thread -> 24.4 min - 8 thread -> 4.1 min (there is not a x8 speedup
 		 * factor, which is to be expected)
@@ -171,7 +196,12 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 		 */
 
 		// Redirect log to logger.
-		final Tailer tailer = Tailer.create( cellposeLogFile, new LoggerTailerListener( logger ), 200, true );
+		final Tailer tailer = Tailer.builder()
+				.setFile( cellposeLogFile )
+				.setTailerListener( new LoggerTailerListener( logger ) )
+				.setDelayDuration( Duration.ofMillis( 200 ) )
+				.setTailFromEnd( true )
+				.get();
 
 		final ExecutorService executors = Executors.newFixedThreadPool( nConcurrentTasks );
 		final List< String > resultDirs = new ArrayList<>( nConcurrentTasks );
@@ -192,7 +222,7 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 		}
 		finally
 		{
-			tailer.stop();
+			tailer.close();
 			logger.setStatus( "" );
 			logger.setProgress( 1. );
 		}
@@ -228,7 +258,7 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 					// Found it. Convert it to 16-bit if we have to.
 					if ( tpImp.getType() != ImagePlus.GRAY16 )
 					{
-						if ( tpImp.getStackSize() > 1 )
+						if ( nslices > 1 )
 							new StackConverter( tpImp ).convertToGray16();
 						else
 							new ImageConverter( tpImp ).convertToGray16();
@@ -245,7 +275,7 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 						"blank_" + t,
 						imps.get( 0 ).getWidth(),
 						imps.get( 0 ).getHeight(),
-						imps.get( 0 ).getNSlices(),
+						nslices,
 						16, // bitdepth
 						NewImage.FILL_BLACK );
 				masks.add( blank );
@@ -265,7 +295,7 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 		output.getCalibration().pixelWidth = calibration[ 0 ];
 		output.getCalibration().pixelHeight = calibration[ 1 ];
 		output.getCalibration().pixelDepth = calibration[ 2 ];
-		output.setDimensions( 1, imps.get( 0 ).getNSlices(), imps.size() );
+		output.setDimensions( 1, nslices, imps.size() );
 		output.setOpenAsHyperStack( true );
 
 		/*
@@ -322,7 +352,7 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 	/**
 	 * Add a hook to delete the content of given path when Fiji quits. Taken
 	 * from https://stackoverflow.com/a/20280989/201698
-	 * 
+	 *
 	 * @param path
 	 */
 	protected static void recursiveDeleteOnShutdownHook( final Path path )
@@ -401,7 +431,9 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 	{
 		private final Logger logger;
 
-		private final static Pattern PERCENTAGE_PATTERN = Pattern.compile( ".+\\s(\\d*\\.?\\d*)\\%.+" );
+		private final static Pattern PERCENTAGE_PATTERN = Pattern.compile( ".+\\D(\\d+(?:\\.\\d+)?)%.+" );
+
+		private final static Pattern INFO_PATTERN = Pattern.compile( ".+\\[INFO\\]\\s+(.+)" );
 
 		public LoggerTailerListener( final Logger logger )
 		{
@@ -411,13 +443,22 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 		@Override
 		public void handle( final String line )
 		{
-			logger.log( line + '\n' );
 			// Do we have percentage?
 			final Matcher matcher = PERCENTAGE_PATTERN.matcher( line );
 			if ( matcher.matches() )
 			{
 				final String percent = matcher.group( 1 );
 				logger.setProgress( Double.valueOf( percent ) / 100. );
+			}
+			else
+			{
+				final Matcher matcher2 = INFO_PATTERN.matcher( line );
+				if ( matcher2.matches() )
+				{
+					final String str = matcher2.group( 1 ).trim();
+					if ( str.length() > 2 )
+						logger.setStatus( str );
+				}
 			}
 		}
 	}
@@ -523,7 +564,17 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 			for ( final ImagePlus imp : imps )
 			{
 				final String name = imp.getShortTitle() + ".tif";
-				IJ.saveAsTiff( imp, Paths.get( tmpDir.toString(), name ).toString() );
+				// If we are running an omnipose detector, just save the
+				// segmentation channel as tmp image
+				if ( cellposeSettings instanceof OmniposeSettings )
+				{
+					final ImagePlus chanImp = new Duplicator().run( imp, cellposeSettings.chan, cellposeSettings.chan, 0, 0, 0, 0 );
+					IJ.saveAsTiff( chanImp, Paths.get( tmpDir.toString(), name ).toString() );
+				}
+				else
+				{
+					IJ.saveAsTiff( imp, Paths.get( tmpDir.toString(), name ).toString() );
+				}
 			}
 
 			/*
@@ -531,18 +582,72 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 			 */
 
 			try
-			{
-				final List< String > cmd = cellposeSettings.toCmdLine( tmpDir.toString() );
-				logger.setStatus( "Running " + cellposeSettings.getExecutableName() );
-				logger.log( "Running " + cellposeSettings.getExecutableName() + " with args:\n" );
-				logger.log( String.join( " ", cmd ) );
-				logger.log( "\n" );
-				final ProcessBuilder pb = new ProcessBuilder( cmd );
-				pb.redirectOutput( ProcessBuilder.Redirect.INHERIT );
-				pb.redirectError( ProcessBuilder.Redirect.INHERIT );
 
-				process = pb.start();
-				process.waitFor();
+			{
+				if ( cellposeSettings instanceof OmniposeSettings )
+				{
+					final List< String > cmdOmni = new ArrayList<>( cellposeSettings.toCmdLine( tmpDir.toString() ) );
+
+					int nClasses = 2; // 2 by default in custom models
+					cmdOmni.add( "--nclasses" );
+					cmdOmni.add( String.valueOf( nClasses ) );
+
+					logger.setStatus( "Running " + cellposeSettings.getExecutableName() );
+					logger.log( "Running " + cellposeSettings.getExecutableName() + " with args:\n" );
+					logger.log( String.join( " ", cmdOmni ) );
+					logger.log( "\n" );
+
+					final ProcessBuilder pbOmni = new ProcessBuilder( cmdOmni );
+					pbOmni.redirectErrorStream( true );
+					process = pbOmni.start();
+
+					final BufferedReader reader = new BufferedReader( new InputStreamReader( process.getInputStream() ) );
+					final String pythonErrorOutput = reader.lines().collect( Collectors.joining() );
+					if ( pythonErrorOutput.contains( "size mismatch for output.2.bias:" ) )
+					{
+						if ( pythonErrorOutput.contains( "copying a param with shape torch.Size([4]) from checkpoint" ) )
+						{
+							nClasses = 3;
+							logger.log( "Regarding the model loaded, --nclasses argument should be set to " + String.valueOf( nClasses ) + "\n" );
+						}
+						else
+						{
+							nClasses = 4;
+							logger.log( "Regarding the model loaded, --nclasses argument should be set to " + String.valueOf( nClasses ) + "\n" );
+						}
+
+						cmdOmni.remove( cmdOmni.size() - 1 );
+						cmdOmni.add( String.valueOf( nClasses ) );
+
+						logger.log( "Running " + cellposeSettings.getExecutableName() + " with args:\n" );
+						logger.log( String.join( " ", cmdOmni ) );
+						logger.log( "\n" );
+						final ProcessBuilder updatedPbOmni = new ProcessBuilder( cmdOmni );
+						updatedPbOmni.redirectOutput( ProcessBuilder.Redirect.INHERIT );
+						updatedPbOmni.redirectError( ProcessBuilder.Redirect.INHERIT );
+
+						process = updatedPbOmni.start();
+						process.waitFor();
+					}
+					else if ( pythonErrorOutput.contains( "pretrained model has incorrect path" ) )
+					{
+						logger.log( "Pretrained model has incorrect path \n" );
+					}
+				}
+				else
+				{
+					final List< String > cmd = cellposeSettings.toCmdLine( tmpDir.toString() );
+					logger.setStatus( "Running " + cellposeSettings.getExecutableName() );
+					logger.log( "Running " + cellposeSettings.getExecutableName() + " with args:\n" );
+					logger.log( String.join( " ", cmd ) );
+					logger.log( "\n" );
+					final ProcessBuilder pb = new ProcessBuilder( cmd );
+					pb.redirectOutput( ProcessBuilder.Redirect.INHERIT );
+					pb.redirectError( ProcessBuilder.Redirect.INHERIT );
+
+					process = pb.start();
+					process.waitFor();
+				}
 			}
 			catch ( final IOException e )
 			{
@@ -622,7 +727,16 @@ public class CellposeDetector< T extends RealType< T > & NativeType< T > > imple
 			final long maxT = interval.max( interval.numDimensions() - 1 );
 			for ( long t = minT; t <= maxT; t++ )
 			{
-				final ImgPlus< T > tp = ImgPlusViews.hyperSlice( img, timeIndex, t );
+				final ImgPlus< T > tpTCZ = ImgPlusViews.hyperSlice( img, timeIndex, t );
+
+				// Put if necessary the channel axis as the last one (CellPose
+				// format)
+				final int chanDim = tpTCZ.dimensionIndex( Axes.CHANNEL );
+				ImgPlus< T > tp = tpTCZ;
+				if ( chanDim > 1 )
+				{
+					tp = ImgPlusViews.moveAxis( tpTCZ, chanDim, tpTCZ.numDimensions() - 1 );
+				}
 				// possibly 2D or 3D with or without channel.
 				final IntervalView< T > crop = Views.interval( tp, cropInterval );
 				final String name = nameGen.apply( t ) + ".tif";

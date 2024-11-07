@@ -53,9 +53,9 @@ public class CellposeSettings extends AbstractCellposeSettings
 
 		protected String cellposePythonPath = "/opt/anaconda3/envs/cellpose/bin/python";
 
-		protected int chan = 0;
+		protected int chan = 1;
 
-		protected int chan2 = -1;
+		protected int chan2 = 0;
 
 		protected PretrainedModelCellpose model = PretrainedModelCellpose.CYTO;
 
@@ -134,6 +134,9 @@ public class CellposeSettings extends AbstractCellposeSettings
 		CYTO( "Cytoplasm", "cyto", false ),
 		NUCLEI( "Nucleus", "nuclei", false ),
 		CYTO2( "Cytoplasm 2.0", "cyto2", false ),
+                LIVECELL( "Live cell", "livecell", false ),
+                TISSUNET( "TissueNet", "tissuenet", false ),
+                CPX( "CPx", "CPx", false ),
 		CUSTOM( "Custom", "", true );
 
 		private final String name;

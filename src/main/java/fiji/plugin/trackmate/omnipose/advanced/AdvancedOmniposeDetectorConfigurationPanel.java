@@ -12,8 +12,8 @@ import javax.swing.JLabel;
 
 import fiji.plugin.trackmate.Model;
 import fiji.plugin.trackmate.Settings;
-import fiji.plugin.trackmate.cellpose.advanced.AdvancedCellposeDetectorConfigurationPanel;
 import fiji.plugin.trackmate.detection.SpotDetectorFactoryBase;
+import fiji.plugin.trackmate.gui.GuiUtils;
 import fiji.plugin.trackmate.gui.displaysettings.SliderPanelDouble;
 import fiji.plugin.trackmate.gui.displaysettings.StyleElements;
 import fiji.plugin.trackmate.omnipose.OmniposeDetectorConfigurationPanel;
@@ -25,6 +25,7 @@ public class AdvancedOmniposeDetectorConfigurationPanel extends OmniposeDetector
 	private static final long serialVersionUID = 1L;
 
 	private static final String TITLE = AdvancedOmniposeDetectorFactory.NAME;;
+
 
 	private final StyleElements.BoundedDoubleElement flowThresholdEl = new StyleElements.BoundedDoubleElement( "Flow threshold", 0.0, 3.0 )
 	{
@@ -44,7 +45,7 @@ public class AdvancedOmniposeDetectorConfigurationPanel extends OmniposeDetector
 		}
 	};
 
-	private final StyleElements.BoundedDoubleElement cellProbThresholdEl = new StyleElements.BoundedDoubleElement("Cell prob", -6.0, 6.0)
+	private final StyleElements.BoundedDoubleElement cellProbThresholdEl = new StyleElements.BoundedDoubleElement( "Cell prob", -6.0, 6.0 )
 	{
 
 		private double cellProbThreshold = 0.;
@@ -64,13 +65,14 @@ public class AdvancedOmniposeDetectorConfigurationPanel extends OmniposeDetector
 
 	public AdvancedOmniposeDetectorConfigurationPanel( final Settings settings, final Model model )
 	{
-		super( settings, model, TITLE, ICON, DOC1_URL, "omnipose", PretrainedModelOmnipose.values() );
+		super( settings, model, TITLE, ICON, AdvancedOmniposeDetectorFactory.DOC_ADV_OMNI_URL, "omnipose", PretrainedModelOmnipose.values() );
+
+		int gridy = 12;
 
 		/*
 		 * Add flow threshold.
 		 */
-
-		int gridy = 12;
+		gridy++;
 
 		final JLabel lblFlowThreshold = new JLabel( "Flow threshold:" );
 		lblFlowThreshold.setFont( SMALL_FONT );
@@ -79,10 +81,10 @@ public class AdvancedOmniposeDetectorConfigurationPanel extends OmniposeDetector
 		gbcLblFlowThreshold.insets = new Insets( 0, 5, 5, 5 );
 		gbcLblFlowThreshold.gridx = 0;
 		gbcLblFlowThreshold.gridy = gridy;
-		add( lblFlowThreshold, gbcLblFlowThreshold );
+		mainPanel.add( lblFlowThreshold, gbcLblFlowThreshold );
 
 		final SliderPanelDouble sliderPanelFlowThreshold = StyleElements.linkedSliderPanel( flowThresholdEl, 3, 0.1 );
-		AdvancedCellposeDetectorConfigurationPanel.setFont( sliderPanelFlowThreshold, SMALL_FONT );
+		GuiUtils.setFont( sliderPanelFlowThreshold, SMALL_FONT );
 		final GridBagConstraints gbcFlowThresholdSlider = new GridBagConstraints();
 		gbcFlowThresholdSlider.anchor = GridBagConstraints.EAST;
 		gbcFlowThresholdSlider.insets = new Insets( 0, 5, 5, 5 );
@@ -90,7 +92,7 @@ public class AdvancedOmniposeDetectorConfigurationPanel extends OmniposeDetector
 		gbcFlowThresholdSlider.gridx = 1;
 		gbcFlowThresholdSlider.gridwidth = 2;
 		gbcFlowThresholdSlider.gridy = gridy;
-		add( sliderPanelFlowThreshold, gbcFlowThresholdSlider );
+		mainPanel.add( sliderPanelFlowThreshold, gbcFlowThresholdSlider );
 
 		/*
 		 * Add cell probability threshold.
@@ -105,10 +107,10 @@ public class AdvancedOmniposeDetectorConfigurationPanel extends OmniposeDetector
 		gbcLblCellProb.insets = new Insets( 0, 5, 5, 5 );
 		gbcLblCellProb.gridx = 0;
 		gbcLblCellProb.gridy = gridy;
-		add( lblCellProb, gbcLblCellProb );
+		mainPanel.add( lblCellProb, gbcLblCellProb );
 
 		final SliderPanelDouble sliderPanelCellProbThreshold = StyleElements.linkedSliderPanel( cellProbThresholdEl, 3, 0.4 );
-		AdvancedCellposeDetectorConfigurationPanel.setFont( sliderPanelCellProbThreshold, SMALL_FONT );
+		GuiUtils.setFont( sliderPanelCellProbThreshold, SMALL_FONT );
 		final GridBagConstraints gbcCellProbThresholdSlider = new GridBagConstraints();
 		gbcCellProbThresholdSlider.anchor = GridBagConstraints.EAST;
 		gbcCellProbThresholdSlider.insets = new Insets( 0, 5, 5, 5 );
@@ -116,7 +118,7 @@ public class AdvancedOmniposeDetectorConfigurationPanel extends OmniposeDetector
 		gbcCellProbThresholdSlider.gridx = 1;
 		gbcCellProbThresholdSlider.gridwidth = 2;
 		gbcCellProbThresholdSlider.gridy = gridy;
-		add( sliderPanelCellProbThreshold, gbcCellProbThresholdSlider );
+		mainPanel.add( sliderPanelCellProbThreshold, gbcCellProbThresholdSlider );
 	}
 
 	@Override

@@ -97,7 +97,10 @@ public class CellposeDetectorFactory< T extends RealType< T > & NativeType< T > 
 
 	/**
 	 * The key to the parameter that stores the second optional channel to
-	 * segment. Use -1 to ignore.
+	 * segment. Use -1 to ignore. 0-valued. Careful, the main channel is using
+	 * the KEY_TARGET_CHANNEL key, which value is 1-valued...
+	 * 
+	 * @see DetectorKeys#KEY_TARGET_CHANNEL
 	 */
 	public static final String KEY_OPTIONAL_CHANNEL_2 = "OPTIONAL_CHANNEL_2";
 
@@ -137,6 +140,8 @@ public class CellposeDetectorFactory< T extends RealType< T > & NativeType< T > 
 	/** The pretty name of the target detector. */
 	public static final String NAME = "Cellpose detector";
 
+	public static final String DOC_CELLPOSE_URL = "https://imagej.net/plugins/trackmate/detectors/trackmate-cellpose";
+
 	/** An html information text. */
 	public static final String INFO_TEXT = "<html>"
 			+ "This detector relies on cellpose to detect objects."
@@ -160,7 +165,7 @@ public class CellposeDetectorFactory< T extends RealType< T > & NativeType< T > 
 			+ "Nat Methods 18, 100–106 (2021)</a>"
 			+ "<p>"
 			+ "Documentation for this module "
-			+ "<a href=\"https://imagej.net/plugins/trackmate/trackmate-cellpose\">on the ImageJ Wiki</a>."
+			+ "<a href=\"" + DOC_CELLPOSE_URL + "\">on the ImageJ Wiki</a>."
 			+ "</html>";
 
 	/*
